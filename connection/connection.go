@@ -73,21 +73,21 @@ func SetMaxGRPCLogLength(characterCount int) {
 //
 // For other connections, the default behavior from gRPC is used and
 // loss of connection is not detected reliably.
-func Connect(address string, metricsManager metrics.CSIMetricsManager, options ...Option) (*grpc.ClientConn, error) {
+func Connect(ctx context.Context, address string, metricsManager metrics.CSIMetricsManager, options ...Option) (*grpc.ClientConn, error) {
 	// Prepend default options
 	options = append([]Option{WithTimeout(time.Second * 30)}, options...)
 	if metricsManager != nil {
 		options = append([]Option{WithMetrics(metricsManager)}, options...)
 	}
-	return connect(address, options)
+	return connect(ctx, address, options)
 }
 
 // ConnectWithoutMetrics behaves exactly like Connect except no metrics are recorded.
 // This function is deprecated, prefer using Connect with `nil` as the metricsManager.
-func ConnectWithoutMetrics(address string, options ...Option) (*grpc.ClientConn, error) {
+func ConnectWithoutMetrics(ctx context.Context, address string, options ...Option) (*grpc.ClientConn, error) {
 	// Prepend default options
 	options = append([]Option{WithTimeout(time.Second * 30)}, options...)
-	return connect(address, options)
+	return connect(ctx, address, options)
 }
 
 // Option is the type of all optional parameters for Connect.
@@ -105,13 +105,13 @@ func OnConnectionLoss(reconnect func() bool) Option {
 
 // ExitOnConnectionLoss returns callback for OnConnectionLoss() that writes
 // an error to /dev/termination-log and exits.
-func ExitOnConnectionLoss() func() bool {
-	return func() bool {
+func ExitOnConnectionLoss() func(context.Context) bool {
+	return func(ctx context.Context) bool {
 		terminationMsg := "Lost connection to CSI driver, exiting"
 		if err := os.WriteFile(terminationLogPath, []byte(terminationMsg), 0644); err != nil {
-			klog.Background().Error(err, "Failed to write a message to the termination logfile", "terminationLogPath", terminationLogPath)
+			klog.FromContext(ctx).Error(err, "Failed to write a message to the termination logfile", "terminationLogPath", terminationLogPath)
 		}
-		klog.Background().Error(nil, terminationMsg)
+		klog.FromContext(ctx).Error(nil, terminationMsg)
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		// Not reached.
 		return false
@@ -148,6 +148,7 @@ type options struct {
 
 // connect is the internal implementation of Connect. It has more options to enable testing.
 func connect(
+	ctx context.Context,
 	address string,
 	connectOptions []Option) (*grpc.ClientConn, error) {
 	var o options
@@ -191,7 +192,7 @@ func connect(
 			if haveConnected && !lostConnection {
 				// We have detected a loss of connection for the first time. Decide what to do...
 				// Record this once. TODO (?): log at regular time intervals.
-				klog.Background().Error(nil, "Lost connection", "address", address)
+				klog.FromContext(ctx).Error(nil, "Lost connection", "address", address)
 				// Inform caller and let it decide? Default is to reconnect.
 				if o.reconnect != nil {
 					reconnect = o.reconnect()
@@ -213,7 +214,7 @@ func connect(
 		return nil, errors.New("OnConnectionLoss callback only supported for unix:// addresses")
 	}
 
-	klog.Background().V(5).Info("Connecting", "address", address)
+	klog.FromContext(ctx).V(5).Info("Connecting", "address", address)
 
 	// Connect in background.
 	var conn *grpc.ClientConn
@@ -232,7 +233,7 @@ func connect(
 	for {
 		select {
 		case <-ticker.C:
-			klog.Background().Info("Still connecting", "address", address)
+			klog.FromContext(ctx).Info("Still connecting", "address", address)
 
 		case <-ready:
 			return conn, err
@@ -242,14 +243,13 @@ func connect(
 
 // LogGRPC is gPRC unary interceptor for logging of CSI messages at level 5. It removes any secrets from the message.
 func LogGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	logger := klog.FromContext(ctx)
-	logger.V(5).Info("GRPC call", "method", method, "request", protosanitizer.StripSecrets(req))
+	klog.FromContext(ctx).V(5).Info("GRPC call", "method", method, "request", protosanitizer.StripSecrets(req))
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	cappedStr := protosanitizer.StripSecrets(reply).String()
 	if maxLogChar > 0 && len(cappedStr) > maxLogChar {
 		cappedStr = cappedStr[:maxLogChar] + fmt.Sprintf(" [response body too large, log capped to %d chars]", maxLogChar)
 	}
-	logger.V(5).Info("GRPC response", "response", cappedStr, "err", err)
+	klog.FromContext(ctx).V(5).Info("GRPC response", "response", cappedStr, "err", err)
 	return err
 }
 
@@ -276,7 +276,6 @@ func (cmm ExtendedCSIMetricsManager) RecordMetricsClientInterceptor(
 	start := time.Now()
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	duration := time.Since(start)
-	logger := klog.FromContext(ctx)
 
 	var cmmBase metrics.CSIMetricsManager
 	cmmBase = cmm
@@ -287,14 +286,14 @@ func (cmm ExtendedCSIMetricsManager) RecordMetricsClientInterceptor(
 		if additionalInfo != nil {
 			additionalInfoVal, ok := additionalInfo.(AdditionalInfo)
 			if !ok {
-				logger.Error(nil, "Failed to record migrated status, cannot convert additional info", "additionalInfo", additionalInfo)
+				klog.FromContext(ctx).Error(nil, "Failed to record migrated status, cannot convert additional info", "additionalInfo", additionalInfo)
 				return err
 			}
 			migrated = additionalInfoVal.Migrated
 		}
 		cmmv, metricsErr := cmm.WithLabelValues(map[string]string{metrics.LabelMigrated: migrated})
 		if metricsErr != nil {
-			logger.Error(metricsErr, "Failed to record migrated status")
+			klog.FromContext(ctx).Error(metricsErr, "Failed to record migrated status")
 		} else {
 			cmmBase = cmmv
 		}

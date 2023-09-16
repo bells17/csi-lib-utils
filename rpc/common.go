@@ -133,9 +133,9 @@ func GetGroupControllerCapabilities(ctx context.Context, conn *grpc.ClientConn) 
 
 // ProbeForever calls Probe() of a CSI driver and waits until the driver becomes ready.
 // Any error other than timeout is returned.
-func ProbeForever(conn *grpc.ClientConn, singleProbeTimeout time.Duration) error {
+func ProbeForever(ctx context.Context, conn *grpc.ClientConn, singleProbeTimeout time.Duration) error {
 	for {
-		klog.Background().Info("Probing CSI driver for readiness")
+		klog.FromContext(ctx).Info("Probing CSI driver for readiness")
 		ready, err := probeOnce(conn, singleProbeTimeout)
 		if err != nil {
 			st, ok := status.FromError(err)
@@ -148,12 +148,12 @@ func ProbeForever(conn *grpc.ClientConn, singleProbeTimeout time.Duration) error
 				return fmt.Errorf("CSI driver probe failed: %s", err)
 			}
 			// Timeout -> driver is not ready. Fall through to sleep() below.
-			klog.Background().Info("CSI driver probe timed out")
+			klog.FromContext(ctx).Info("CSI driver probe timed out")
 		} else {
 			if ready {
 				return nil
 			}
-			klog.Background().Info("CSI driver is not ready")
+			klog.FromContext(ctx).Info("CSI driver is not ready")
 		}
 		// Timeout was returned or driver is not ready.
 		time.Sleep(probeInterval)
