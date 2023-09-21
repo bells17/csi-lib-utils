@@ -151,6 +151,7 @@ func connect(
 	ctx context.Context,
 	address string,
 	connectOptions []Option) (*grpc.ClientConn, error) {
+	logger := klog.FromContext(ctx)
 	var o options
 	for _, option := range connectOptions {
 		option(&o)
@@ -192,7 +193,7 @@ func connect(
 			if haveConnected && !lostConnection {
 				// We have detected a loss of connection for the first time. Decide what to do...
 				// Record this once. TODO (?): log at regular time intervals.
-				klog.FromContext(ctx).Error(nil, "Lost connection", "address", address)
+				logger.Error(nil, "Lost connection", "address", address)
 				// Inform caller and let it decide? Default is to reconnect.
 				if o.reconnect != nil {
 					reconnect = o.reconnect()
@@ -214,7 +215,7 @@ func connect(
 		return nil, errors.New("OnConnectionLoss callback only supported for unix:// addresses")
 	}
 
-	klog.FromContext(ctx).V(5).Info("Connecting", "address", address)
+	logger.V(5).Info("Connecting", "address", address)
 
 	// Connect in background.
 	var conn *grpc.ClientConn
@@ -233,7 +234,7 @@ func connect(
 	for {
 		select {
 		case <-ticker.C:
-			klog.FromContext(ctx).Info("Still connecting", "address", address)
+			logger.Info("Still connecting", "address", address)
 
 		case <-ready:
 			return conn, err
@@ -243,13 +244,14 @@ func connect(
 
 // LogGRPC is gPRC unary interceptor for logging of CSI messages at level 5. It removes any secrets from the message.
 func LogGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	klog.FromContext(ctx).V(5).Info("GRPC call", "method", method, "request", protosanitizer.StripSecrets(req))
+	logger := klog.FromContext(ctx)
+	logger.V(5).Info("GRPC call", "method", method, "request", protosanitizer.StripSecrets(req))
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	cappedStr := protosanitizer.StripSecrets(reply).String()
 	if maxLogChar > 0 && len(cappedStr) > maxLogChar {
 		cappedStr = cappedStr[:maxLogChar] + fmt.Sprintf(" [response body too large, log capped to %d chars]", maxLogChar)
 	}
-	klog.FromContext(ctx).V(5).Info("GRPC response", "response", cappedStr, "err", err)
+	logger.V(5).Info("GRPC response", "response", cappedStr, "err", err)
 	return err
 }
 

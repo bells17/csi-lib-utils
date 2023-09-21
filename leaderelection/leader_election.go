@@ -167,6 +167,7 @@ func (l *leaderElection) Run() error {
 		return err
 	}
 
+	logger := klog.FromContext(l.ctx)
 	leaderConfig := leaderelection.LeaderElectionConfig{
 		Lock:          lock,
 		LeaseDuration: l.leaseDuration,
@@ -174,15 +175,16 @@ func (l *leaderElection) Run() error {
 		RetryPeriod:   l.retryPeriod,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				klog.FromContext(l.ctx).V(2).Info("became leader, starting")
+				logger := klog.FromContext(ctx)
+				logger.V(2).Info("became leader, starting")
 				l.runFunc(ctx)
 			},
 			OnStoppedLeading: func() {
-				klog.FromContext(l.ctx).Error(nil, "Stopped leading")
+				logger.Error(nil, "Stopped leading")
 				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			},
 			OnNewLeader: func(identity string) {
-				klog.FromContext(l.ctx).V(3).Info("New leader detected", "leader", identity)
+				logger.V(3).Info("New leader detected", "leader", identity)
 			},
 		},
 		WatchDog: l.healthCheck,
