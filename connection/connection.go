@@ -29,6 +29,8 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/klog/v2"
 )
 
@@ -157,15 +159,19 @@ func connect(
 		option(&o)
 	}
 
+	bc := backoff.DefaultConfig
+	bc.MaxDelay = time.Second
 	dialOptions := []grpc.DialOption{
-		grpc.WithInsecure(),                    // Don't use TLS, it's usually local Unix domain socket in a container.
-		grpc.WithBackoffMaxDelay(time.Second),  // Retry every second after failure.
+		grpc.WithTransportCredentials(insecure.NewCredentials()), // Don't use TLS, it's usually local Unix domain socket in a container.
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: bc}),  // Retry every second after failure.
 		grpc.WithBlock(),                       // Block until connection succeeds.
 		grpc.WithIdleTimeout(time.Duration(0)), // Never close connection because of inactivity.
 	}
 
 	if o.timeout > 0 {
-		dialOptions = append(dialOptions, grpc.WithTimeout(o.timeout))
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.timeout)
+		defer cancel()
 	}
 
 	interceptors := []grpc.UnaryClientInterceptor{LogGRPC}
@@ -189,7 +195,7 @@ func connect(
 		lostConnection := false
 		reconnect := true
 
-		dialOptions = append(dialOptions, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+		dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			if haveConnected && !lostConnection {
 				// We have detected a loss of connection for the first time. Decide what to do...
 				// Record this once. TODO (?): log at regular time intervals.
@@ -202,6 +208,10 @@ func connect(
 			}
 			if !reconnect {
 				return nil, errors.New("connection lost, reconnecting disabled")
+			}
+			timeout := 0 * time.Second
+			if deadline, ok := ctx.Deadline(); ok {
+				timeout = time.Until(deadline)
 			}
 			conn, err := net.DialTimeout("unix", address[len(unixPrefix):], timeout)
 			if err == nil {
@@ -222,7 +232,7 @@ func connect(
 	var err error
 	ready := make(chan bool)
 	go func() {
-		conn, err = grpc.Dial(address, dialOptions...)
+		conn, err = grpc.DialContext(ctx, address, dialOptions...)
 		close(ready)
 	}()
 
