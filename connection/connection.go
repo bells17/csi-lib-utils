@@ -99,7 +99,7 @@ type Option func(o *options)
 // connection got lost. If that callback returns true, the connection
 // is reestablished. Otherwise the connection is left as it is and
 // all future gRPC calls using it will fail with status.Unavailable.
-func OnConnectionLoss(reconnect func() bool) Option {
+func OnConnectionLoss(reconnect func(context.Context) bool) Option {
 	return func(o *options) {
 		o.reconnect = reconnect
 	}
@@ -142,7 +142,7 @@ func WithOtelTracing() Option {
 }
 
 type options struct {
-	reconnect         func() bool
+	reconnect         func(context.Context) bool
 	timeout           time.Duration
 	metricsManager    metrics.CSIMetricsManager
 	enableOtelTracing bool
@@ -196,13 +196,14 @@ func connect(
 		reconnect := true
 
 		dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			logger := klog.FromContext(ctx)
 			if haveConnected && !lostConnection {
 				// We have detected a loss of connection for the first time. Decide what to do...
 				// Record this once. TODO (?): log at regular time intervals.
 				logger.Error(nil, "Lost connection", "address", address)
 				// Inform caller and let it decide? Default is to reconnect.
 				if o.reconnect != nil {
-					reconnect = o.reconnect()
+					reconnect = o.reconnect(ctx)
 				}
 				lostConnection = true
 			}

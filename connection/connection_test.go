@@ -296,7 +296,7 @@ func TestDisconnect(t *testing.T) {
 
 	_, ctx := ktesting.NewTestContext(t)
 	reconnectCount := 0
-	conn, err := Connect(ctx, addr, metrics.NewCSIMetricsManager("fake.csi.driver.io"), OnConnectionLoss(func() bool {
+	conn, err := Connect(ctx, addr, metrics.NewCSIMetricsManager("fake.csi.driver.io"), OnConnectionLoss(func(_ context.Context) bool {
 		reconnectCount++
 		// Don't reconnect.
 		return false
@@ -348,7 +348,7 @@ func TestExplicitReconnect(t *testing.T) {
 
 	_, ctx := ktesting.NewTestContext(t)
 	reconnectCount := 0
-	conn, err := Connect(ctx, addr, metrics.NewCSIMetricsManager("fake.csi.driver.io"), OnConnectionLoss(func() bool {
+	conn, err := Connect(ctx, addr, metrics.NewCSIMetricsManager("fake.csi.driver.io"), OnConnectionLoss(func(_ context.Context) bool {
 		reconnectCount++
 		// Reconnect.
 		return true
