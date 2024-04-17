@@ -23,5 +23,4 @@ include release-tools/build.make
 .PHONY: logcheck
 test: logcheck
 logcheck:
-	go install sigs.k8s.io/logtools/logcheck@v0.8.1
-	PATH=$$(go env GOPATH)/bin:$$PATH logcheck -check-contextual ./...
+	hack/verify-logcheck.sh
