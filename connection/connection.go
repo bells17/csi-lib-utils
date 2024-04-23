@@ -170,6 +170,9 @@ func connect(
 
 	if o.timeout > 0 {
 		var cancel context.CancelFunc
+		// Please note that WithTimeout also prevents all future attempts to reconnect.
+		// https://github.com/grpc/grpc-go/issues/133
+		// https://github.com/kubernetes-csi/csi-lib-utils/pull/149#discussion_r1574707477
 		ctx, cancel = context.WithTimeout(ctx, o.timeout)
 		defer cancel()
 	}
@@ -210,7 +213,7 @@ func connect(
 			if !reconnect {
 				return nil, errors.New("connection lost, reconnecting disabled")
 			}
-			timeout := 0 * time.Second
+			var timeout time.Duration
 			if deadline, ok := ctx.Deadline(); ok {
 				timeout = time.Until(deadline)
 			}

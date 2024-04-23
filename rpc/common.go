@@ -140,10 +140,10 @@ func ProbeForever(ctx context.Context, conn *grpc.ClientConn, singleProbeTimeout
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case <-ticker.C:
 			logger.Info("Probing CSI driver for readiness")
-			ready, err := probeOnce(conn, singleProbeTimeout)
+			ready, err := probeOnce(ctx, conn, singleProbeTimeout)
 			if err != nil {
 				st, ok := status.FromError(err)
 				if !ok {
@@ -167,8 +167,8 @@ func ProbeForever(ctx context.Context, conn *grpc.ClientConn, singleProbeTimeout
 }
 
 // probeOnce is a helper to simplify defer cancel()
-func probeOnce(conn *grpc.ClientConn, timeout time.Duration) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func probeOnce(ctx context.Context, conn *grpc.ClientConn, timeout time.Duration) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return Probe(ctx, conn)
 }
