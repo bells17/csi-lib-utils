@@ -140,7 +140,7 @@ func ProbeForever(ctx context.Context, conn *grpc.ClientConn, singleProbeTimeout
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return context.Cause(ctx)
 		case <-ticker.C:
 			logger.Info("Probing CSI driver for readiness")
 			ready, err := probeOnce(ctx, conn, singleProbeTimeout)
