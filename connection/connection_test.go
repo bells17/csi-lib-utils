@@ -391,10 +391,6 @@ func TestExplicitReconnect(t *testing.T) {
 }
 
 func TestConnectMetrics(t *testing.T) {
-	contextFromKtesting := func() context.Context {
-		_, ctx := ktesting.NewTestContext(t)
-		return ctx
-	}
 	testCases := []struct {
 		name            string
 		expectedMetrics string
@@ -423,7 +419,7 @@ func TestConnectMetrics(t *testing.T) {
 			csi_sidecar_operations_seconds_sum{driver_name="fake.csi.driver.io",grpc_status_code="Unimplemented",method_name="/csi.v1.Identity/GetPluginInfo"} 0
 			csi_sidecar_operations_seconds_count{driver_name="fake.csi.driver.io",grpc_status_code="Unimplemented",method_name="/csi.v1.Identity/GetPluginInfo"} 1
 			`,
-			ctx:         contextFromKtesting(),
+			ctx:         context.Background(),
 			cmm:         metrics.NewCSIMetricsManager("fake.csi.driver.io"),
 			checkServer: true,
 		},
@@ -448,7 +444,7 @@ func TestConnectMetrics(t *testing.T) {
 			csi_sidecar_operations_seconds_sum{driver_name="fake.csi.driver.io",grpc_status_code="Unimplemented",method_name="/csi.v1.Identity/GetPluginInfo",migrated="true"} 0
 			csi_sidecar_operations_seconds_count{driver_name="fake.csi.driver.io",grpc_status_code="Unimplemented",method_name="/csi.v1.Identity/GetPluginInfo",migrated="true"} 1
 			`,
-			ctx: context.WithValue(contextFromKtesting(), AdditionalInfoKey, AdditionalInfo{
+			ctx: context.WithValue(context.Background(), AdditionalInfoKey, AdditionalInfo{
 				Migrated: "true",
 			}),
 			cmm:         metrics.NewCSIMetricsManagerWithOptions("fake.csi.driver.io", metrics.WithMigration()),
